@@ -20,6 +20,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "clang/Lex/LiteralSupport.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/Basic/PrettyStackTrace.h"
@@ -731,6 +732,100 @@ class CastExpressionIdValidator final : public CorrectionCandidateCallback {
 };
 }
 
+
+ExprResult Parser::ParseMacroExpression(CastParseKind ParseKind,
+                                       bool isAddressOfOperand,
+                                       bool &NotCastExpr,
+                                       TypeCastState isTypeCast,
+                                       bool isVectorLiteral,
+                                       bool *NotPrimaryExpression) {
+  ExprResult Res;
+  auto SavedType = PreferredType;
+  NotCastExpr = false;
+
+  if (!getLangOpts().CPlusPlus)
+    Res = ExprError();
+
+  // Are postfix-expression suffix operators permitted after this
+  // cast-expression? If not, and we find some, we'll parse them anyway and
+  // diagnose them.
+  bool AllowSuffix = true;
+
+  if (!Tok.is(tok::identifier)) {
+    Diag(Tok, diag::err_expected) << tok::identifier;
+    Res = ExprError();
+  }
+
+
+  CXXScopeSpec SS;
+
+  if (ParseOptionalCXXScopeSpecifier(SS, /*ObjectType=*/nullptr,
+                                  /*ObjectHasErrors=*/false,
+                                  /*EnteringContext*/ false))
+  {
+    Res = ExprError();
+  }
+
+  // A C++ scope specifier that isn't followed by a typename.
+  // AnnotateScopeToken(SS, IsNewScope);
+
+  TemplateTy Template;
+  UnqualifiedId TemplateName;
+  TemplateName.setIdentifier(Tok.getIdentifierInfo(), Tok.getLocation());
+  bool MemberOfUnknownSpecialization;
+  if (TemplateNameKind TNK = Actions.isTemplateName(
+          getCurScope(), SS,
+          /*hasTemplateKeyword=*/false, TemplateName,
+          /*ObjectType=*/nullptr, /*EnteringContext*/false, Template,
+          MemberOfUnknownSpecialization)) {
+    // Only annotate an undeclared template name as a template-id if the
+    // following tokens have the form of a template argument list.
+    // Consume the identifier.
+    ConsumeToken();
+    if (AnnotateMacroTemplateIdToken(Template, TNK, SS, SourceLocation(),
+                                TemplateName)) {
+      // If an unrecoverable error occurred, we need to return true here,
+      // because the token stream is in a damaged state.  We may not
+      // return a valid identifier.
+      Res = ExprError();
+    }
+  }
+
+  if (Tok.is(tok::annot_template_id)) {
+    TemplateIdAnnotation *TemplateId = takeTemplateIdAnnotation(Tok);
+    if (TemplateId->Kind == TNK_Type_template) {
+      // A template-id that refers to a type was parsed into a
+      // template-id annotation in a context where we weren't allowed
+      // to produce a type annotation token. Update the template-id
+      // annotation token to a type annotation token now.
+      AnnotateTemplateIdTokenAsType(SS, ImplicitTypenameContext::No);
+    }
+  }
+
+  if (Res.isInvalid()) {
+    return Res;
+  }
+
+  return ParseCXXMacroIdExpression(SS);
+}
+
+ExprResult Parser::ParseMacroExpression(CastParseKind ParseKind,
+                                       bool isAddressOfOperand,
+                                       TypeCastState isTypeCast,
+                                       bool isVectorLiteral,
+                                       bool *NotPrimaryExpression) {
+  bool NotCastExpr;
+  ExprResult Res = ParseMacroExpression(ParseKind,
+                                       isAddressOfOperand,
+                                       NotCastExpr,
+                                       isTypeCast,
+                                       isVectorLiteral,
+                                       NotPrimaryExpression);
+  if (NotCastExpr)
+    Diag(Tok, diag::err_expected_expression);
+  return Res;
+}
+
 /// Parse a cast-expression, or, if \pisUnaryExpression is true, parse
 /// a unary-expression.
 ///
@@ -940,6 +1035,7 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   // break out of the switch;  at the end we call ParsePostfixExpressionSuffix
   // to handle the postfix expression suffixes.  Cases that cannot be followed
   // by postfix exprs should set AllowSuffix to false.
+
   switch (SavedKind) {
   case tok::l_paren: {
     // If this expression is limited to being a unary-expression, the paren can
@@ -1863,6 +1959,137 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     }
 
   return Res;
+}
+
+ExprResult
+Parser::FinalizeMacro(ExprResult LHS) {
+  // @todo Pass the proper location
+  SourceLocation LParLoc;
+  auto SavedType = PreferredType;
+
+  InMessageExpressionRAIIObject InMessage(*this, false);
+
+  Expr *ExecConfig = nullptr;
+
+  ExprVector ArgExprs;
+
+  if (!LHS.isInvalid()) {
+    Expr *Fn = LHS.get();
+    SourceLocation RParLoc = Tok.getLocation();
+    LHS = Actions.ActOnCallExpr(getCurScope(), Fn, LParLoc, ArgExprs, RParLoc,
+                                ExecConfig);
+  }
+
+  return LHS;
+}
+
+bool Parser::ParseMacroInvocation() {
+  SourceLocation StartLoc = Tok.getLocation();
+
+  // Parse the macro's function invocation
+  ExprResult MacroInvocation = ParseMacroExpression(AnyCastExpr);
+
+  if (MacroInvocation.isInvalid())
+  {
+    return true;
+  }
+
+  // Clone of Postfix
+  MacroInvocation = FinalizeMacro(MacroInvocation);
+
+  // Evaluate the CallExpr
+  ExprResult CallReslut = Actions.ActOnMacroInvocation(cast<CallExpr>(MacroInvocation.get()), StartLoc);
+
+  const clang::StringLiteral *ReturnVal;
+
+  if (ReturnVal = llvm::dyn_cast<clang::StringLiteral>(CallReslut.get())) {
+    llvm::outs() << "Expansion result: " << ReturnVal->getString() << "\n";
+  }
+
+  // Create a SmallVector to hold the tokens
+  llvm::SmallVector<Token, 4> Toks;
+
+  // Assume you have a string
+  std::string str = ReturnVal->getString().str();
+  // Convert the string to a StringRef
+  llvm::StringRef strRef(str);
+
+  // Create a unique_ptr to a MemoryBuffer that contains the string
+  std::unique_ptr<llvm::MemoryBuffer> Buf = llvm::MemoryBuffer::getMemBufferCopy(str, "my buffer");
+
+  // Get the FileManager from the Preprocessor
+  clang::FileManager &FM = PP.getFileManager();
+
+  // Create a dummy FileEntry
+  const clang::FileEntry *FE = FM.getVirtualFile("dummy", Buf->getBufferSize(), 0);
+
+  // Get the SourceManager from the Preprocessor
+  clang::SourceManager &SM = PP.getSourceManager();
+
+  // Create a new FileID for the dummy FileEntry
+  clang::FileID FID = SM.createFileID(FE, clang::SourceLocation(), clang::SrcMgr::C_User);
+
+  // Override the buffer for the dummy FileEntry
+  SM.overrideFileContents(FE, std::move(Buf));
+
+  // Create a SourceLocation for the start of the FileID
+  clang::SourceLocation ExpansionStartLoc = SM.getLocForStartOfFile(FID);
+
+  // Create a Lexer
+  clang::Lexer lexer(ExpansionStartLoc, PP.getLangOpts(), strRef.begin(), strRef.begin(), strRef.end());
+
+  // Create a token
+  clang::Token CurTok;
+
+  while (true) {
+    lexer.LexFromRawLexer(CurTok);
+    // Tok.setLocation(StartLoc);
+    if (CurTok.is(clang::tok::eof)) break;
+
+    // If the token is a raw identifier, look it up in the identifier table
+    if (CurTok.is(clang::tok::raw_identifier)) {
+      CurTok.setIdentifierInfo(PP.LookUpIdentifierInfo(CurTok));
+    }
+
+    if (Tok.is(clang::tok::string_literal)) {
+      // Create an ArrayRef that refers to the token
+      llvm::ArrayRef<clang::Token> TokRef(&Tok, /*size=*/1);
+
+      // Create a StringLiteralParser
+      clang::StringLiteralParser Parser(TokRef, PP);
+
+      // Check for errors
+      if (Parser.hadError) {
+        // Handle the error...
+      }
+
+      // Get the string literal as a StringRef
+      // llvm::StringRef Str = Parser.GetString();
+      
+      // Now Str contains the contents of the string literal, with escape sequences interpreted
+    }
+
+    Toks.push_back(CurTok);
+
+    PP.DumpToken(CurTok);
+    llvm::outs() << '\n';
+  }
+
+  // Create a TokenLexer that provides the tokens
+  clang::TokenLexer TL(Toks.data(), Toks.size(), /*DisableExpansion=*/false, /*MacroExpansion=*/false, /*MacroArgCache=*/false, PP);
+
+  // Convert the SmallVector to an ArrayRef
+  llvm::ArrayRef<clang::Token> ToksRef(Toks);
+
+  // Push the TokenLexer onto the include stack
+  PP.EnterTokenStream(ToksRef, /*DisableMacroExpansion=*/false, /*OwnsTokens=*/false);
+
+
+  if (ExpectAndConsume(tok::semi)) {
+    return true;
+  }
+
+  return false;
 }
 
 /// Once the leading part of a postfix-expression is parsed, this

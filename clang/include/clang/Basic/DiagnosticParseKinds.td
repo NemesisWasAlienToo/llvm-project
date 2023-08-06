@@ -12,6 +12,8 @@
 
 let Component = "Parse" in {
 
+def err_macro_function_not_constexpr : Error<
+  "macro function is not a constexpr function">;
 def err_asm_qualifier_ignored : Error<
   "expected 'volatile', 'inline', 'goto', or '('">, CatInlineAsm;
 def err_global_asm_qualifier_ignored : Error<

@@ -1311,6 +1311,180 @@ bool Parser::ParseTemplateIdAfterTemplateName(bool ConsumeLastToken,
          Invalid;
 }
 
+ParsedTemplateArgument Parser::ParseMacroArgument() {
+  EnterExpressionEvaluationContext EnterConstantEvaluated(
+    Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated,
+    /*LambdaContextDecl=*/nullptr,
+    /*ExprContext=*/Sema::ExpressionEvaluationContextRecord::EK_TemplateArgument);
+
+  // Parse a non-type template argument.
+  SourceLocation Loc = Tok.getLocation();
+  // ExprResult ExprArg = ParseConstantExpressionInExprEvalContext(MaybeTypeCast);
+  ExprResult ExprArg = ToStringLiteral();
+  if (ExprArg.isInvalid() || !ExprArg.get()) {
+    return ParsedTemplateArgument();
+  }
+
+  return ParsedTemplateArgument(ParsedTemplateArgument::NonType,
+                                ExprArg.get(), Loc);
+}
+
+bool Parser::ParseMacroArgumentList(TemplateArgList &TemplateArgs,
+                                    TemplateTy Template,
+                                    SourceLocation OpenLoc) {
+
+  ColonProtectionRAIIObject ColonProtection(*this, false);
+
+  auto RunSignatureHelp = [&] {
+    if (!Template)
+      return QualType();
+    CalledSignatureHelp = true;
+    return Actions.ProduceTemplateArgumentSignatureHelp(Template, TemplateArgs,
+                                                        OpenLoc);
+  };
+
+  unsigned BalanceCount = 1;
+
+  while (BalanceCount > 0 && Tok.isNot(tok::eof))
+  {
+    if (Tok.is(tok::l_brace))
+      BalanceCount++;
+    else if (Tok.is(tok::r_brace))
+      BalanceCount--;
+
+    if(!BalanceCount)
+      break;
+
+    PreferredType.enterFunctionArgument(Tok.getLocation(), RunSignatureHelp);
+    ParsedTemplateArgument Arg = ParseMacroArgument();
+
+    if (Arg.isInvalid()) {
+      return true;
+    }
+
+    // Save this template argument.
+    TemplateArgs.push_back(Arg);
+  }
+
+  // do {
+  //   PreferredType.enterFunctionArgument(Tok.getLocation(), RunSignatureHelp);
+  //   ParsedTemplateArgument Arg = ParseMacroArgument();
+  //   SourceLocation EllipsisLoc;
+  //   if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
+  //     Arg = Actions.ActOnPackExpansion(Arg, EllipsisLoc);
+
+  //   if (Arg.isInvalid()) {
+  //     if (PP.isCodeCompletionReached() && !CalledSignatureHelp)
+  //       RunSignatureHelp();
+  //     return true;
+  //   }
+
+  //   // Save this template argument.
+  //   TemplateArgs.push_back(Arg);
+
+  //   // If the next token is a comma, consume it and keep reading
+  //   // arguments.
+  // } while (TryConsumeToken(tok::r_brace));
+
+  return false;
+}
+
+bool Parser::ParseTemplateIdAfterMacroTemplateName(bool ConsumeLastToken,
+                                              SourceLocation &LAngleLoc,
+                                              TemplateArgList &TemplateArgs,
+                                              SourceLocation &RAngleLoc,
+                                              TemplateTy Template) {
+  assert(Tok.is(tok::l_brace) && "Must have already parsed the template-name");
+
+  // Consume the '{'.
+  LAngleLoc = ConsumeToken();
+
+  // Parse the optional template-argument-list.
+  bool Invalid = false;
+  {
+    GreaterThanIsOperatorScope G(GreaterThanIsOperator, false);
+    if (Tok.isNot(tok::r_brace))
+      Invalid = ParseMacroArgumentList(TemplateArgs, Template, LAngleLoc);
+  }
+
+  if (Tok.isNot(tok::r_brace))
+  {
+    Invalid = true;
+    Diag(Tok, diag::err_expected) << tok::r_brace;
+  }
+
+  RAngleLoc = Tok.getLocation();
+  
+  return Invalid;
+}
+
+bool Parser::AnnotateMacroTemplateIdToken(TemplateTy Template, TemplateNameKind TNK,
+                                          CXXScopeSpec &SS,
+                                          SourceLocation TemplateKWLoc,
+                                          UnqualifiedId &TemplateName,
+                                          bool AllowTypeAnnotation,
+                                          bool TypeConstraint) {
+  assert(getLangOpts().CPlusPlus && "Can only annotate template-ids in C++");
+  assert((Tok.is(tok::l_brace) || TypeConstraint) &&
+         "Parser isn't at the beginning of a template-id");
+  assert(!(TypeConstraint && AllowTypeAnnotation) && "type-constraint can't be "
+                                                     "a type annotation");
+  assert((!TypeConstraint || TNK == TNK_Concept_template) && "type-constraint "
+         "must accompany a concept name");
+  assert((Template || TNK == TNK_Non_template) && "missing template name");
+
+  // Consume the template-name.
+  SourceLocation TemplateNameLoc = TemplateName.getSourceRange().getBegin();
+
+  // Parse the enclosed template argument list.
+  SourceLocation LAngleLoc, RAngleLoc;
+  TemplateArgList TemplateArgs;
+  bool ArgsInvalid = false;
+  if (!TypeConstraint || Tok.is(tok::l_brace)) {
+    ArgsInvalid = ParseTemplateIdAfterMacroTemplateName(
+        false, LAngleLoc, TemplateArgs, RAngleLoc, Template);
+    // If we couldn't recover from invalid arguments, don't form an annotation
+    // token -- we don't know how much to annotate.
+    // FIXME: This can lead to duplicate diagnostics if we retry parsing this
+    // template-id in another context. Try to annotate anyway?
+    if (RAngleLoc.isInvalid())
+      return true;
+  }
+
+  ASTTemplateArgsPtr TemplateArgsPtr(TemplateArgs);
+
+  // Build the annotation token.
+  Tok.setKind(tok::annot_template_id);
+
+  IdentifierInfo *TemplateII =
+      TemplateName.getKind() == UnqualifiedIdKind::IK_Identifier
+          ? TemplateName.Identifier
+          : nullptr;
+
+  OverloadedOperatorKind OpKind =
+      TemplateName.getKind() == UnqualifiedIdKind::IK_Identifier
+          ? OO_None
+          : TemplateName.OperatorFunctionId.Operator;
+
+  TemplateIdAnnotation *TemplateId = TemplateIdAnnotation::Create(
+      TemplateKWLoc, TemplateNameLoc, TemplateII, OpKind, Template, TNK,
+      LAngleLoc, RAngleLoc, TemplateArgs, ArgsInvalid, TemplateIds);
+
+  Tok.setAnnotationValue(TemplateId);
+  if (TemplateKWLoc.isValid())
+    Tok.setLocation(TemplateKWLoc);
+  else
+    Tok.setLocation(TemplateNameLoc);
+
+  // Common fields for the annotation token
+  Tok.setAnnotationEndLoc(RAngleLoc);
+
+  // In case the tokens were cached, have Preprocessor replace them with the
+  // annotation token.
+  PP.AnnotateCachedTokens(Tok);
+  return false;
+}
+
 /// Replace the tokens that form a simple-template-id with an
 /// annotation token containing the complete template-id.
 ///

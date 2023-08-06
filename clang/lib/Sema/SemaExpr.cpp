@@ -1621,6 +1621,30 @@ QualType Sema::UsualArithmeticConversions(ExprResult &LHS, ExprResult &RHS,
 //  Semantic Analysis for various Expression Types
 //===----------------------------------------------------------------------===//
 
+clang::ExprResult Sema::ActOnMacroInvocation(CallExpr *Call, SourceLocation StartOfMacro) {
+
+  clang::Expr::EvalResult Result;
+  if (!Call->EvaluateAsRValue(Result, Context)) {
+    // Compile-time evaluation failed, emit an error
+    Diag(StartOfMacro, diag::err_expr_not_cce);
+    return ExprError();
+  }
+
+  if (Result.Val.isLValue()) {
+    const clang::Expr *E = Result.Val.getLValueBase().get<const clang::Expr *>();
+    if (const clang::StringLiteral *strLiteral = clang::dyn_cast<clang::StringLiteral>(E)) {
+      // Now you have a pointer to the StringLiteral
+      // return strLiteral;
+      return clang::ExprResult(const_cast<clang::StringLiteral*>(strLiteral));
+    }
+  }
+
+  // If the result is not a StringLiteral, return an error
+  Diag(StartOfMacro, diag::err_macro_result_not_string_literal);
+
+  // Return the CallExpr node
+  return ExprError();
+}
 
 ExprResult Sema::ActOnGenericSelectionExpr(
     SourceLocation KeyLoc, SourceLocation DefaultLoc, SourceLocation RParenLoc,

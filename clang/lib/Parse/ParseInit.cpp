@@ -425,6 +425,47 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator(
   return ExprError();
 }
 
+ExprResult Parser::ToStringLiteral() {
+  bool Invalid = false;
+  llvm::StringRef Spelling = PP.getSpelling(Tok, &Invalid);
+  if (Invalid) {
+    // Handle error
+    return ExprError();
+  }
+
+  std::string Stringified;
+  for (char C : Spelling) {
+    if (isPrintable(C) && C != '\\' && C != '"') {
+      Stringified.push_back(C);
+    } else {
+      char EscapedChar[5];
+      sprintf(EscapedChar, "\\%03o", C);
+      Stringified.append(EscapedChar);
+    }
+  }
+
+  // Add double quotes around the stringified spelling
+  Stringified = "\"" + Stringified + "\"";
+
+  // Create a new token for the string literal
+  Token Result;
+  Result.startToken();
+  Result.setKind(tok::string_literal);
+  Result.setLiteralData(Stringified.data());
+  Result.setLength(Stringified.size());
+
+  // Create a vector to hold the string literal token
+  SmallVector<Token, 1> StringToks;
+  StringToks.push_back(Result);
+
+  // Create a StringLiteral AST node from the token
+  ExprResult StringLiteral = Actions.ActOnStringLiteral(StringToks);
+
+  ConsumeAnyToken();
+
+  return StringLiteral;
+}
+
 /// ParseBraceInitializer - Called when parsing an initializer that has a
 /// leading open brace.
 ///

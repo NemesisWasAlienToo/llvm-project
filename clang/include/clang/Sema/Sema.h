@@ -57,6 +57,7 @@
 #include "clang/Sema/SemaConcept.h"
 #include "clang/Sema/TypoCorrection.h"
 #include "clang/Sema/Weak.h"
+#include "clang/Lex/Token.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallBitVector.h"
@@ -5714,6 +5715,10 @@ public:
                                 Scope *UDLScope = nullptr);
 
   ExprResult ActOnUnevaluatedStringLiteral(ArrayRef<Token> StringToks);
+
+  /// @todo To be written
+  ExprResult ActOnMacroInvocation(CallExpr *Call,
+                                  SourceLocation StartOfMacro);
 
   /// ControllingExprOrType is either an opaque pointer coming out of a
   /// ParsedType or an Expr *. FIXME: it'd be better to split this interface

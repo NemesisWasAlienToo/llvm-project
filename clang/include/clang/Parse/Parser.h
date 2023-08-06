@@ -1800,12 +1800,25 @@ private:
 
   ExprResult ParseRHSOfBinaryExpression(ExprResult LHS,
                                         prec::Level MinPrec);
+
   /// Control what ParseCastExpression will parse.
   enum CastParseKind {
     AnyCastExpr = 0,
     UnaryExprOnly,
     PrimaryExprOnly
   };
+  ExprResult ParseMacroExpression(CastParseKind ParseKind,
+                                 bool isAddressOfOperand,
+                                 bool &NotCastExpr,
+                                 TypeCastState isTypeCast,
+                                 bool isVectorLiteral = false,
+                                 bool *NotPrimaryExpression = nullptr);
+  ExprResult ParseMacroExpression(CastParseKind ParseKind,
+                                 bool isAddressOfOperand = false,
+                                 TypeCastState isTypeCast = NotTypeCast,
+                                 bool isVectorLiteral = false,
+                                 bool *NotPrimaryExpression = nullptr);
+
   ExprResult ParseCastExpression(CastParseKind ParseKind,
                                  bool isAddressOfOperand,
                                  bool &NotCastExpr,
@@ -1892,7 +1905,10 @@ private:
   // C++ Expressions
   ExprResult tryParseCXXIdExpression(CXXScopeSpec &SS, bool isAddressOfOperand,
                                      Token &Replacement);
+  ExprResult tryParseCXXMacroIdExpression(CXXScopeSpec &SS, bool isAddressOfOperand,
+                                     Token &Replacement);
   ExprResult ParseCXXIdExpression(bool isAddressOfOperand = false);
+  ExprResult ParseCXXMacroIdExpression(CXXScopeSpec &SS, bool isAddressOfOperand = false) ;
 
   bool areTokensAdjacent(const Token &A, const Token &B);
 
@@ -2045,7 +2061,9 @@ private:
     return ParseBraceInitializer();
   }
   bool MayBeDesignationStart();
+  ExprResult ToStringLiteral();
   ExprResult ParseBraceInitializer();
+
   struct DesignatorCompletionInfo {
     SmallVectorImpl<Expr *> &InitExprs;
     QualType PreferredBaseType;
@@ -2093,6 +2111,8 @@ private:
   StmtResult ParseStatementOrDeclaration(
       StmtVector &Stmts, ParsedStmtContext StmtCtx,
       SourceLocation *TrailingElseLoc = nullptr);
+  ExprResult FinalizeMacro(ExprResult LHS);
+  bool ParseMacroInvocation();
   StmtResult ParseStatementOrDeclarationAfterAttributes(
       StmtVector &Stmts, ParsedStmtContext StmtCtx,
       SourceLocation *TrailingElseLoc, ParsedAttributes &DeclAttrs,
@@ -3520,6 +3540,11 @@ public:
                           bool AllowDestructorName, bool AllowConstructorName,
                           bool AllowDeductionGuide,
                           SourceLocation *TemplateKWLoc, UnqualifiedId &Result);
+  bool ParseUnqualifiedMacroId(CXXScopeSpec &SS, ParsedType ObjectType,
+                          bool ObjectHadErrors, bool EnteringContext,
+                          bool AllowDestructorName, bool AllowConstructorName,
+                          bool AllowDeductionGuide,
+                          SourceLocation *TemplateKWLoc, UnqualifiedId &Result);
 
   /// Parses the mapper modifier in map, to, and from clauses.
   bool parseMapperModifier(Sema::OpenMPVarListDataTy &Data);
@@ -3576,6 +3601,23 @@ private:
                                         TemplateArgList &TemplateArgs,
                                         SourceLocation &RAngleLoc,
                                         TemplateTy NameHint = nullptr);
+    //--------------------------------------------
+  ParsedTemplateArgument ParseMacroArgument();
+  bool ParseMacroArgumentList(TemplateArgList &TemplateArgs,
+                              TemplateTy Template,
+                              SourceLocation OpenLoc);
+  bool ParseTemplateIdAfterMacroTemplateName(bool ConsumeLastToken,
+                                             SourceLocation &LAngleLoc,
+                                             TemplateArgList &TemplateArgs,
+                                             SourceLocation &RAngleLoc,
+                                             TemplateTy NameHint = nullptr);
+  bool AnnotateMacroTemplateIdToken(TemplateTy Template, TemplateNameKind TNK,
+                                    CXXScopeSpec &SS,
+                                    SourceLocation TemplateKWLoc,
+                                    UnqualifiedId &TemplateName,
+                                    bool AllowTypeAnnotation = true,
+                                    bool TypeConstraint = false);
+  //--------------------------------------------
 
   bool AnnotateTemplateIdToken(TemplateTy Template, TemplateNameKind TNK,
                                CXXScopeSpec &SS,

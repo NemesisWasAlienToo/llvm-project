@@ -1025,6 +1025,13 @@ Parser::ParseExternalDeclaration(ParsedAttributes &Attrs,
     SkipUntil(tok::semi);
     return nullptr;
 
+  case tok::kw_macro: {
+    ConsumeToken();  // Consume the 'macro' token.
+    ParseMacroInvocation();
+    return ParseExternalDeclaration(Attrs, DeclSpecAttrs, DS);
+    // break;
+  }
+
   default:
   dont_know:
     if (Tok.isEditorPlaceholder()) {

@@ -180,6 +180,16 @@ Retry:
   tok::TokenKind Kind  = Tok.getKind();
   SourceLocation AtLoc;
   switch (Kind) {
+  // Handle a macro invocation
+  case tok::kw_macro: {
+    ConsumeToken();  // Consume the 'macro' token.
+    ParseMacroInvocation();
+
+    return ParseStatementOrDeclarationAfterAttributes(Stmts, StmtCtx, TrailingElseLoc, CXX11Attrs, GNUAttrs);
+
+    break;
+  }
+
   case tok::at: // May be a @try or @throw statement
     {
       AtLoc = ConsumeToken();  // consume @

@@ -622,6 +622,31 @@ ExprResult Parser::tryParseCXXIdExpression(CXXScopeSpec &SS,
   return E;
 }
 
+ExprResult Parser::tryParseCXXMacroIdExpression(CXXScopeSpec &SS,
+                                           bool isAddressOfOperand,
+                                           Token &Replacement) {
+  ExprResult E;
+
+  SourceLocation TemplateKWLoc;
+  UnqualifiedId Name;
+  if (ParseUnqualifiedMacroId(SS, /*ObjectType=*/nullptr,
+                          /*ObjectHadErrors=*/false,
+                          /*EnteringContext=*/false,
+                          /*AllowDestructorName=*/false,
+                          /*AllowConstructorName=*/false,
+                          /*AllowDeductionGuide=*/false, &TemplateKWLoc, Name))
+    return ExprError();
+
+
+  E = Actions.ActOnIdExpression(
+      // getCurScope(), SS, TemplateKWLoc, Name, Tok.is(tok::l_paren),
+      getCurScope(), SS, TemplateKWLoc, Name, true,
+      false, /*CCC=*/nullptr, /*IsInlineAsmIdentifier=*/false,
+      &Replacement);
+
+  return E;
+}
+
 /// ParseCXXIdExpression - Handle id-expression.
 ///
 ///       id-expression:
@@ -682,6 +707,21 @@ ExprResult Parser::ParseCXXIdExpression(bool isAddressOfOperand) {
     // keyword replacement that needs to be reparsed.
     UnconsumeToken(Replacement);
     Result = tryParseCXXIdExpression(SS, isAddressOfOperand, Replacement);
+  }
+  assert(!Result.isUnset() && "Typo correction suggested a keyword replacement "
+                              "for a previous keyword suggestion");
+  return Result;
+}
+
+ExprResult Parser::ParseCXXMacroIdExpression(CXXScopeSpec &SS, bool isAddressOfOperand) {
+  Token Replacement;
+  ExprResult Result =
+      tryParseCXXMacroIdExpression(SS, isAddressOfOperand, Replacement);
+  if (Result.isUnset()) {
+    // If the ExprResult is valid but null, then typo correction suggested a
+    // keyword replacement that needs to be reparsed.
+    UnconsumeToken(Replacement);
+    Result = tryParseCXXMacroIdExpression(SS, isAddressOfOperand, Replacement);
   }
   assert(!Result.isUnset() && "Typo correction suggested a keyword replacement "
                               "for a previous keyword suggestion");
@@ -3138,6 +3178,102 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, ParsedType ObjectType,
   default:
     Diag(Tok, diag::err_expected_unqualified_id) << getLangOpts().CPlusPlus;
     return true;
+  }
+}
+
+bool Parser::ParseUnqualifiedMacroId(CXXScopeSpec &SS, ParsedType ObjectType,
+                                bool ObjectHadErrors, bool EnteringContext,
+                                bool AllowDestructorName,
+                                bool AllowConstructorName,
+                                bool AllowDeductionGuide,
+                                SourceLocation *TemplateKWLoc,
+                                UnqualifiedId &Result) {
+  if (TemplateKWLoc)
+    *TemplateKWLoc = SourceLocation();
+
+  // Handle 'A::template B'. This is for template-ids which have not
+  // already been annotated by ParseOptionalCXXScopeSpecifier().
+  bool TemplateSpecified = false;
+
+
+  // unqualified-id:
+  //   identifier
+  //   template-id (when it hasn't already been annotated)
+  if (Tok.is(tok::identifier)) {
+  ParseIdentifier:
+    // Consume the identifier.
+    IdentifierInfo *Id = Tok.getIdentifierInfo();
+    SourceLocation IdLoc = ConsumeToken();
+
+    if (!getLangOpts().CPlusPlus) {
+      // If we're not in C++, only identifiers matter. Record the
+      // identifier and return.
+      Result.setIdentifier(Id, IdLoc);
+      return false;
+    }
+
+    ParsedTemplateTy TemplateName;
+    if (AllowConstructorName &&
+        Actions.isCurrentClassName(*Id, getCurScope(), &SS)) {
+      // We have parsed a constructor name.
+      ParsedType Ty = Actions.getConstructorName(*Id, IdLoc, getCurScope(), SS,
+                                                 EnteringContext);
+      if (!Ty)
+        return true;
+      Result.setConstructorName(Ty, IdLoc, IdLoc);
+    } else if (getLangOpts().CPlusPlus17 && AllowDeductionGuide &&
+               SS.isEmpty() &&
+               Actions.isDeductionGuideName(getCurScope(), *Id, IdLoc, SS,
+                                            &TemplateName)) {
+      // We have parsed a template-name naming a deduction guide.
+      Result.setDeductionGuideName(TemplateName, IdLoc);
+    } else {
+      // We have parsed an identifier.
+      Result.setIdentifier(Id, IdLoc);
+    }
+
+    // If the next token is a '<', we may have a template.
+    TemplateTy Template;
+    if (Tok.is(tok::less))
+      return ParseUnqualifiedIdTemplateId(
+          SS, ObjectType, ObjectHadErrors,
+          TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Id, IdLoc,
+          EnteringContext, Result, TemplateSpecified);
+    else if (TemplateSpecified &&
+             Actions.ActOnTemplateName(
+                 getCurScope(), SS, *TemplateKWLoc, Result, ObjectType,
+                 EnteringContext, Template,
+                 /*AllowInjectedClassName*/ true) == TNK_Non_template)
+      return true;
+
+    return false;
+  }
+
+  // unqualified-id:
+  //   template-id (already parsed and annotated)
+  if (Tok.is(tok::annot_template_id)) {
+    TemplateIdAnnotation *TemplateId = takeTemplateIdAnnotation(Tok);
+
+    // FIXME: Consider passing invalid template-ids on to callers; they may
+    // be able to recover better than we can.
+    if (TemplateId->isInvalid()) {
+      ConsumeAnnotationToken();
+      return true;
+    }
+
+    // We have already parsed a template-id; consume the annotation token as
+    // our unqualified-id.
+    Result.setTemplateId(TemplateId);
+    SourceLocation TemplateLoc = TemplateId->TemplateKWLoc;
+    if (TemplateLoc.isValid()) {
+      if (TemplateKWLoc && (ObjectType || SS.isSet()))
+        *TemplateKWLoc = TemplateLoc;
+      else
+        Diag(TemplateLoc, diag::err_unexpected_template_in_unqualified_id)
+            << FixItHint::CreateRemoval(TemplateLoc);
+    }
+    ConsumeAnnotationToken();
+    return false;
   }
 }
 
