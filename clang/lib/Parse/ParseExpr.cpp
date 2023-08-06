@@ -1989,8 +1989,7 @@ bool Parser::ParseMacroInvocation() {
   // Parse the macro's function invocation
   ExprResult MacroInvocation = ParseMacroExpression(AnyCastExpr);
 
-  if (MacroInvocation.isInvalid())
-  {
+  if (MacroInvocation.isInvalid()) {
     return true;
   }
 
@@ -2009,13 +2008,11 @@ bool Parser::ParseMacroInvocation() {
   // Create a SmallVector to hold the tokens
   llvm::SmallVector<Token, 4> Toks;
 
-  // Assume you have a string
-  std::string str = ReturnVal->getString().str();
-  // Convert the string to a StringRef
-  llvm::StringRef strRef(str);
-
   // Create a unique_ptr to a MemoryBuffer that contains the string
-  std::unique_ptr<llvm::MemoryBuffer> Buf = llvm::MemoryBuffer::getMemBufferCopy(str, "my buffer");
+  std::unique_ptr<llvm::MemoryBuffer> Buf = llvm::MemoryBuffer::getMemBufferCopy(ReturnVal->getString().str(), "my buffer");
+
+  // Get a StringRef
+  llvm::StringRef strRef = Buf->getBuffer();
 
   // Get the FileManager from the Preprocessor
   clang::FileManager &FM = PP.getFileManager();
@@ -2075,6 +2072,13 @@ bool Parser::ParseMacroInvocation() {
     llvm::outs() << '\n';
   }
 
+  Toks.push_back(Tok);
+
+  PP.DumpToken(Tok);
+  llvm::outs() << '\n';
+  
+  ConsumeAnyToken();
+
   // Create a TokenLexer that provides the tokens
   clang::TokenLexer TL(Toks.data(), Toks.size(), /*DisableExpansion=*/false, /*MacroExpansion=*/false, /*MacroArgCache=*/false, PP);
 
@@ -2085,9 +2089,9 @@ bool Parser::ParseMacroInvocation() {
   PP.EnterTokenStream(ToksRef, /*DisableMacroExpansion=*/false, /*OwnsTokens=*/false);
 
 
-  if (ExpectAndConsume(tok::semi)) {
-    return true;
-  }
+  // if (ExpectAndConsume(tok::semi)) {
+  //   return true;
+  // }
 
   return false;
 }
