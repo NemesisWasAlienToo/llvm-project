@@ -740,16 +740,10 @@ ExprResult Parser::ParseMacroExpression(CastParseKind ParseKind,
                                        bool isVectorLiteral,
                                        bool *NotPrimaryExpression) {
   ExprResult Res;
-  auto SavedType = PreferredType;
   NotCastExpr = false;
 
   if (!getLangOpts().CPlusPlus)
     Res = ExprError();
-
-  // Are postfix-expression suffix operators permitted after this
-  // cast-expression? If not, and we find some, we'll parse them anyway and
-  // diagnose them.
-  bool AllowSuffix = true;
 
   if (!Tok.is(tok::identifier)) {
     Diag(Tok, diag::err_expected) << tok::identifier;
@@ -1965,7 +1959,6 @@ ExprResult
 Parser::FinalizeMacro(ExprResult LHS) {
   // @todo Pass the proper location
   SourceLocation LParLoc;
-  auto SavedType = PreferredType;
 
   InMessageExpressionRAIIObject InMessage(*this, false);
 
@@ -2001,7 +1994,7 @@ bool Parser::ParseMacroInvocation() {
 
   const clang::StringLiteral *ReturnVal;
 
-  if (ReturnVal = llvm::dyn_cast<clang::StringLiteral>(CallReslut.get())) {
+  if ((ReturnVal = llvm::dyn_cast<clang::StringLiteral>(CallReslut.get()))) {
     llvm::outs() << "Expansion result: " << ReturnVal->getString() << "\n";
   }
 
@@ -2077,7 +2070,6 @@ bool Parser::ParseMacroInvocation() {
   PP.DumpToken(Tok);
   llvm::outs() << '\n';
   
-  ConsumeAnyToken();
 
   // Create a TokenLexer that provides the tokens
   clang::TokenLexer TL(Toks.data(), Toks.size(), /*DisableExpansion=*/false, /*MacroExpansion=*/false, /*MacroArgCache=*/false, PP);
@@ -2088,10 +2080,7 @@ bool Parser::ParseMacroInvocation() {
   // Push the TokenLexer onto the include stack
   PP.EnterTokenStream(ToksRef, /*DisableMacroExpansion=*/false, /*OwnsTokens=*/false);
 
-
-  // if (ExpectAndConsume(tok::semi)) {
-  //   return true;
-  // }
+  ConsumeAnyToken();
 
   return false;
 }
