@@ -739,29 +739,27 @@ ExprResult Parser::ParseMacroExpression(CastParseKind ParseKind,
                                        TypeCastState isTypeCast,
                                        bool isVectorLiteral,
                                        bool *NotPrimaryExpression) {
-  ExprResult Res;
   NotCastExpr = false;
 
   if (!getLangOpts().CPlusPlus)
-    Res = ExprError();
+    return ExprError();
 
   if (!Tok.is(tok::identifier)) {
     Diag(Tok, diag::err_expected) << tok::identifier;
-    Res = ExprError();
+    return ExprError();
   }
-
 
   CXXScopeSpec SS;
-
   if (ParseOptionalCXXScopeSpecifier(SS, /*ObjectType=*/nullptr,
                                   /*ObjectHasErrors=*/false,
-                                  /*EnteringContext*/ false))
-  {
-    Res = ExprError();
+                                  /*EnteringContext*/ false)) {
+    return ExprError();
   }
 
-  // A C++ scope specifier that isn't followed by a typename.
-  // AnnotateScopeToken(SS, IsNewScope);
+  if (!Tok.is(tok::identifier)) {
+    Diag(Tok, diag::err_expected) << tok::identifier;
+    return ExprError();
+  }
 
   TemplateTy Template;
   UnqualifiedId TemplateName;
@@ -781,7 +779,7 @@ ExprResult Parser::ParseMacroExpression(CastParseKind ParseKind,
       // If an unrecoverable error occurred, we need to return true here,
       // because the token stream is in a damaged state.  We may not
       // return a valid identifier.
-      Res = ExprError();
+      return ExprError();
     }
   }
 
@@ -794,10 +792,6 @@ ExprResult Parser::ParseMacroExpression(CastParseKind ParseKind,
       // annotation token to a type annotation token now.
       AnnotateTemplateIdTokenAsType(SS, ImplicitTypenameContext::No);
     }
-  }
-
-  if (Res.isInvalid()) {
-    return Res;
   }
 
   return ParseCXXMacroIdExpression(SS);
@@ -1031,6 +1025,16 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   // by postfix exprs should set AllowSuffix to false.
 
   switch (SavedKind) {
+  case tok::kw_macro: { // Handle a macro invocation
+    ConsumeToken();  // Consume the 'macro' token.
+    ParseMacroInvocation();
+    return ParseCastExpression(ParseKind,
+                                      isAddressOfOperand,
+                                      NotCastExpr,
+                                      isTypeCast,
+                                      isVectorLiteral,
+                                      NotPrimaryExpression);
+  }
   case tok::l_paren: {
     // If this expression is limited to being a unary-expression, the paren can
     // not start a cast expression.
@@ -1989,20 +1993,25 @@ bool Parser::ParseMacroInvocation() {
   // Clone of Postfix
   MacroInvocation = FinalizeMacro(MacroInvocation);
 
-  // Evaluate the CallExpr
-  ExprResult CallReslut = Actions.ActOnMacroInvocation(cast<CallExpr>(MacroInvocation.get()), StartLoc);
-
-  const clang::StringLiteral *ReturnVal;
-
-  if ((ReturnVal = llvm::dyn_cast<clang::StringLiteral>(CallReslut.get()))) {
-    llvm::outs() << "Expansion result: " << ReturnVal->getString() << "\n";
+  if (MacroInvocation.isInvalid()) {
+    return true;
   }
+
+  // Evaluate the CallExpr
+  std::optional<std::string> Result = Actions.ActOnMacroInvocation(cast<CallExpr>(MacroInvocation.get()), StartLoc);
+
+  if (!Result) {
+    return true;
+  }
+
+  llvm::outs() << "Expansion result: " << *Result << "\n";
 
   // Create a SmallVector to hold the tokens
   llvm::SmallVector<Token, 4> Toks;
 
   // Create a unique_ptr to a MemoryBuffer that contains the string
-  std::unique_ptr<llvm::MemoryBuffer> Buf = llvm::MemoryBuffer::getMemBufferCopy(ReturnVal->getString().str(), "my buffer");
+  // std::unique_ptr<llvm::MemoryBuffer> Buf = llvm::MemoryBuffer::getMemBufferCopy(*Result, "expansion");
+  std::unique_ptr<llvm::MemoryBuffer> Buf = llvm::MemoryBuffer::getMemBufferCopy(*Result);
 
   // Get a StringRef
   llvm::StringRef strRef = Buf->getBuffer();

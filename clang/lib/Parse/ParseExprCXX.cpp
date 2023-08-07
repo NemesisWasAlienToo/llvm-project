@@ -634,8 +634,10 @@ ExprResult Parser::tryParseCXXMacroIdExpression(CXXScopeSpec &SS,
                           /*EnteringContext=*/false,
                           /*AllowDestructorName=*/false,
                           /*AllowConstructorName=*/false,
-                          /*AllowDeductionGuide=*/false, &TemplateKWLoc, Name))
+                          /*AllowDeductionGuide=*/false, &TemplateKWLoc, Name)) {
+    llvm::outs() << "Failed\n";
     return ExprError();
+  }
 
 
   E = Actions.ActOnIdExpression(
@@ -715,8 +717,7 @@ ExprResult Parser::ParseCXXIdExpression(bool isAddressOfOperand) {
 
 ExprResult Parser::ParseCXXMacroIdExpression(CXXScopeSpec &SS, bool isAddressOfOperand) {
   Token Replacement;
-  ExprResult Result =
-      tryParseCXXMacroIdExpression(SS, isAddressOfOperand, Replacement);
+  ExprResult Result = tryParseCXXMacroIdExpression(SS, isAddressOfOperand, Replacement);
   if (Result.isUnset()) {
     // If the ExprResult is valid but null, then typo correction suggested a
     // keyword replacement that needs to be reparsed.
@@ -3200,46 +3201,29 @@ bool Parser::ParseUnqualifiedMacroId(CXXScopeSpec &SS, ParsedType ObjectType,
   //   identifier
   //   template-id (when it hasn't already been annotated)
   if (Tok.is(tok::identifier)) {
-  ParseIdentifier:
     // Consume the identifier.
     IdentifierInfo *Id = Tok.getIdentifierInfo();
     SourceLocation IdLoc = ConsumeToken();
 
-    if (!getLangOpts().CPlusPlus) {
-      // If we're not in C++, only identifiers matter. Record the
-      // identifier and return.
-      Result.setIdentifier(Id, IdLoc);
-      return false;
-    }
-
-    ParsedTemplateTy TemplateName;
-    if (AllowConstructorName &&
-        Actions.isCurrentClassName(*Id, getCurScope(), &SS)) {
-      // We have parsed a constructor name.
-      ParsedType Ty = Actions.getConstructorName(*Id, IdLoc, getCurScope(), SS,
-                                                 EnteringContext);
-      if (!Ty)
-        return true;
-      Result.setConstructorName(Ty, IdLoc, IdLoc);
-    } else if (getLangOpts().CPlusPlus17 && AllowDeductionGuide &&
-               SS.isEmpty() &&
-               Actions.isDeductionGuideName(getCurScope(), *Id, IdLoc, SS,
-                                            &TemplateName)) {
-      // We have parsed a template-name naming a deduction guide.
-      Result.setDeductionGuideName(TemplateName, IdLoc);
-    } else {
-      // We have parsed an identifier.
-      Result.setIdentifier(Id, IdLoc);
-    }
+    Result.setIdentifier(Id, IdLoc);
 
     // If the next token is a '<', we may have a template.
     TemplateTy Template;
-    if (Tok.is(tok::less))
-      return ParseUnqualifiedIdTemplateId(
-          SS, ObjectType, ObjectHadErrors,
-          TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Id, IdLoc,
-          EnteringContext, Result, TemplateSpecified);
-    else if (TemplateSpecified &&
+
+    // TemplateTy Template;
+    // if (Tok.is(tok::less))
+    //   return ParseUnqualifiedIdTemplateId(
+    //       SS, ObjectType, ObjectHadErrors,
+    //       TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Id, IdLoc,
+    //       EnteringContext, Result, TemplateSpecified);
+    // else if (TemplateSpecified &&
+    //          Actions.ActOnTemplateName(
+    //              getCurScope(), SS, *TemplateKWLoc, Result, ObjectType,
+    //              EnteringContext, Template,
+    //              /*AllowInjectedClassName*/ true) == TNK_Non_template)
+    //   return true;
+
+    if (TemplateSpecified &&
              Actions.ActOnTemplateName(
                  getCurScope(), SS, *TemplateKWLoc, Result, ObjectType,
                  EnteringContext, Template,
@@ -3275,6 +3259,8 @@ bool Parser::ParseUnqualifiedMacroId(CXXScopeSpec &SS, ParsedType ObjectType,
     ConsumeAnnotationToken();
     return false;
   }
+
+  return false;
 }
 
 /// ParseCXXNewExpression - Parse a C++ new-expression. New is used to allocate

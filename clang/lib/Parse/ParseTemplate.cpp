@@ -1345,8 +1345,7 @@ bool Parser::ParseMacroArgumentList(TemplateArgList &TemplateArgs,
 
   unsigned BalanceCount = 1;
 
-  while (BalanceCount > 0 && Tok.isNot(tok::eof))
-  {
+  while (BalanceCount > 0 && Tok.isNot(tok::eof)) {
     if (Tok.is(tok::l_brace))
       BalanceCount++;
     else if (Tok.is(tok::r_brace))
@@ -1365,6 +1364,9 @@ bool Parser::ParseMacroArgumentList(TemplateArgList &TemplateArgs,
     // Save this template argument.
     TemplateArgs.push_back(Arg);
   }
+
+  if (Tok.is(tok::eof))
+    return true;
 
   // do {
   //   PreferredType.enterFunctionArgument(Tok.getLocation(), RunSignatureHelp);
@@ -1390,10 +1392,10 @@ bool Parser::ParseMacroArgumentList(TemplateArgList &TemplateArgs,
 }
 
 bool Parser::ParseTemplateIdAfterMacroTemplateName(bool ConsumeLastToken,
-                                              SourceLocation &LAngleLoc,
-                                              TemplateArgList &TemplateArgs,
-                                              SourceLocation &RAngleLoc,
-                                              TemplateTy Template) {
+                                                   SourceLocation &LAngleLoc,
+                                                   TemplateArgList &TemplateArgs,
+                                                   SourceLocation &RAngleLoc,
+                                                   TemplateTy Template) {
   assert(Tok.is(tok::l_brace) && "Must have already parsed the template-name");
 
   // Consume the '{'.
@@ -1433,6 +1435,11 @@ bool Parser::AnnotateMacroTemplateIdToken(TemplateTy Template, TemplateNameKind 
          "must accompany a concept name");
   assert((Template || TNK == TNK_Non_template) && "missing template name");
 
+  if (Tok.isNot(tok::l_brace)) {
+    Diag(Tok, diag::err_expected) << tok::l_brace;
+    return true;
+  }
+
   // Consume the template-name.
   SourceLocation TemplateNameLoc = TemplateName.getSourceRange().getBegin();
 
@@ -1440,16 +1447,17 @@ bool Parser::AnnotateMacroTemplateIdToken(TemplateTy Template, TemplateNameKind 
   SourceLocation LAngleLoc, RAngleLoc;
   TemplateArgList TemplateArgs;
   bool ArgsInvalid = false;
-  if (!TypeConstraint || Tok.is(tok::l_brace)) {
-    ArgsInvalid = ParseTemplateIdAfterMacroTemplateName(
+  ArgsInvalid = ParseTemplateIdAfterMacroTemplateName(
         false, LAngleLoc, TemplateArgs, RAngleLoc, Template);
-    // If we couldn't recover from invalid arguments, don't form an annotation
-    // token -- we don't know how much to annotate.
-    // FIXME: This can lead to duplicate diagnostics if we retry parsing this
-    // template-id in another context. Try to annotate anyway?
-    if (RAngleLoc.isInvalid())
-      return true;
-  }
+
+  if (ArgsInvalid)
+    return true;
+  // If we couldn't recover from invalid arguments, don't form an annotation
+  // token -- we don't know how much to annotate.
+  // FIXME: This can lead to duplicate diagnostics if we retry parsing this
+  // template-id in another context. Try to annotate anyway?
+  if (RAngleLoc.isInvalid())
+    return true;
 
   ASTTemplateArgsPtr TemplateArgsPtr(TemplateArgs);
 

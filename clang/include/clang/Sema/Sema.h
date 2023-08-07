@@ -5717,8 +5717,8 @@ public:
   ExprResult ActOnUnevaluatedStringLiteral(ArrayRef<Token> StringToks);
 
   /// @todo To be written
-  ExprResult ActOnMacroInvocation(CallExpr *Call,
-                                  SourceLocation StartOfMacro);
+  std::optional<std::string> ActOnMacroInvocation(CallExpr *Call,
+                                                  SourceLocation StartOfMacro);
 
   /// ControllingExprOrType is either an opaque pointer coming out of a
   /// ParsedType or an Expr *. FIXME: it'd be better to split this interface

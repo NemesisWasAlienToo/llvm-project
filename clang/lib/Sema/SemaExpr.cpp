@@ -1621,21 +1621,33 @@ QualType Sema::UsualArithmeticConversions(ExprResult &LHS, ExprResult &RHS,
 //  Semantic Analysis for various Expression Types
 //===----------------------------------------------------------------------===//
 
-clang::ExprResult Sema::ActOnMacroInvocation(CallExpr *Call, SourceLocation StartOfMacro) {
+std::optional<std::string> Sema::ActOnMacroInvocation(CallExpr *Call, SourceLocation StartOfMacro) {
 
   clang::Expr::EvalResult Result;
   if (!Call->EvaluateAsRValue(Result, Context)) {
     // Compile-time evaluation failed, emit an error
     Diag(StartOfMacro, diag::err_expr_not_cce);
-    return ExprError();
+    return std::nullopt;
   }
 
   if (Result.Val.isLValue()) {
     const clang::Expr *E = Result.Val.getLValueBase().get<const clang::Expr *>();
+
+    // Hanlde the case where the result is a string literal
     if (const clang::StringLiteral *strLiteral = clang::dyn_cast<clang::StringLiteral>(E)) {
       // Now you have a pointer to the StringLiteral
-      // return strLiteral;
-      return clang::ExprResult(const_cast<clang::StringLiteral*>(strLiteral));
+      return strLiteral->getString().str();
+    }
+
+    // Handle the case where the result is an array of characters
+    if (const clang::DeclRefExpr *DRE = clang::dyn_cast<clang::DeclRefExpr>(E)) {
+        if (const clang::VarDecl *VD = clang::dyn_cast<clang::VarDecl>(DRE->getDecl())) {
+            if (VD->getType()->isArrayType()) {
+                if (const clang::StringLiteral *strLiteral = clang::dyn_cast<clang::StringLiteral>(VD->getAnyInitializer())) {
+                    return strLiteral->getString().str();
+                }
+            }
+        }
     }
   }
 
@@ -1643,7 +1655,7 @@ clang::ExprResult Sema::ActOnMacroInvocation(CallExpr *Call, SourceLocation Star
   Diag(StartOfMacro, diag::err_macro_result_not_string_literal);
 
   // Return the CallExpr node
-  return ExprError();
+  return std::nullopt;
 }
 
 ExprResult Sema::ActOnGenericSelectionExpr(
@@ -3866,6 +3878,7 @@ bool Sema::CheckLoopHintExpr(Expr *E, SourceLocation Loc) {
   return false;
 }
 
+#include "clang/Sema/Lookup.h"
 ExprResult Sema::ActOnNumericConstant(const Token &Tok, Scope *UDLScope) {
   // Fast path for a single digit (which is quite common).  A single digit
   // cannot have a trigraph, escaped newline, radix prefix, or suffix.
