@@ -1807,6 +1807,7 @@ private:
     UnaryExprOnly,
     PrimaryExprOnly
   };
+  
   ExprResult ParseMacroExpression(CastParseKind ParseKind,
                                  bool isAddressOfOperand,
                                  bool &NotCastExpr,

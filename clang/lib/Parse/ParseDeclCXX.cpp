@@ -2660,6 +2660,15 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
                                        ParsedAttributes &AccessAttrs,
                                        const ParsedTemplateInfo &TemplateInfo,
                                        ParsingDeclRAIIObject *TemplateDiags) {
+  if (Tok.is(tok::kw_macro) && getLangOpts().CPlusPlus20) {
+    ConsumeToken();  // Consume the 'macro' token.
+    ParseMacroInvocation();
+    return ParseCXXClassMemberDeclaration(AS,
+                                          AccessAttrs,
+                                          TemplateInfo,
+                                          TemplateDiags);
+  }
+
   if (Tok.is(tok::at)) {
     if (getLangOpts().ObjC && NextToken().isObjCAtKeyword(tok::objc_defs))
       Diag(Tok, diag::err_at_defs_cxx);

@@ -100,6 +100,12 @@ StmtResult
 Parser::ParseStatementOrDeclaration(StmtVector &Stmts,
                                     ParsedStmtContext StmtCtx,
                                     SourceLocation *TrailingElseLoc) {
+                                      
+  if (Tok.is(tok::kw_macro) && getLangOpts().CPlusPlus20) {
+    ConsumeToken();  // Consume the 'macro' token.
+    ParseMacroInvocation();
+    return ParseStatementOrDeclaration(Stmts, StmtCtx, TrailingElseLoc);
+  }
 
   ParenBraceBracketBalancer BalancerRAIIObj(*this);
 

@@ -1002,11 +1002,23 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
                                        bool &NotCastExpr,
                                        TypeCastState isTypeCast,
                                        bool isVectorLiteral,
-                                       bool *NotPrimaryExpression) {
+                                       bool *NotPrimaryExpression) {  
   ExprResult Res;
   tok::TokenKind SavedKind = Tok.getKind();
   auto SavedType = PreferredType;
   NotCastExpr = false;
+
+  // Handle a macro invocation
+  if (Tok.is(tok::kw_macro) && getLangOpts().CPlusPlus20) {
+    ConsumeToken();  // Consume the 'macro' token.
+    ParseMacroInvocation();
+    return ParseCastExpression(ParseKind,
+                               isAddressOfOperand,
+                               NotCastExpr,
+                               isTypeCast,
+                               isVectorLiteral,
+                               NotPrimaryExpression);
+  }
 
   // Are postfix-expression suffix operators permitted after this
   // cast-expression? If not, and we find some, we'll parse them anyway and
@@ -1025,16 +1037,6 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   // by postfix exprs should set AllowSuffix to false.
 
   switch (SavedKind) {
-  case tok::kw_macro: { // Handle a macro invocation
-    ConsumeToken();  // Consume the 'macro' token.
-    ParseMacroInvocation();
-    return ParseCastExpression(ParseKind,
-                                      isAddressOfOperand,
-                                      NotCastExpr,
-                                      isTypeCast,
-                                      isVectorLiteral,
-                                      NotPrimaryExpression);
-  }
   case tok::l_paren: {
     // If this expression is limited to being a unary-expression, the paren can
     // not start a cast expression.
@@ -2004,8 +2006,6 @@ bool Parser::ParseMacroInvocation() {
     return true;
   }
 
-  llvm::outs() << "Expansion result: " << *Result << "\n";
-
   // Create a SmallVector to hold the tokens
   llvm::SmallVector<Token, 4> Toks;
 
@@ -2061,24 +2061,13 @@ bool Parser::ParseMacroInvocation() {
       if (Parser.hadError) {
         // Handle the error...
       }
-
-      // Get the string literal as a StringRef
-      // llvm::StringRef Str = Parser.GetString();
-      
-      // Now Str contains the contents of the string literal, with escape sequences interpreted
     }
 
     Toks.push_back(CurTok);
-
-    PP.DumpToken(CurTok);
-    llvm::outs() << '\n';
   }
 
+  // Move the token after macro invocation to the end of the currently appended tokens
   Toks.push_back(Tok);
-
-  PP.DumpToken(Tok);
-  llvm::outs() << '\n';
-  
 
   // Create a TokenLexer that provides the tokens
   clang::TokenLexer TL(Toks.data(), Toks.size(), /*DisableExpansion=*/false, /*MacroExpansion=*/false, /*MacroArgCache=*/false, PP);

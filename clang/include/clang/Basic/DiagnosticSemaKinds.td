@@ -107,7 +107,7 @@ def err_ice_too_large : Error<
   "integer constant expression evaluates to value %0 that cannot be "
   "represented in a %1-bit %select{signed|unsigned}2 integer type">;
 def err_expr_not_string_literal : Error<"expression is not a string literal">;
-def err_macro_result_not_string_literal : Error<"macro result is not a string literal">;
+def err_macro_result_not_string_literal_or_array : Error<"macro result is not a string literal or an array">;
 
 // Semantic analysis of constant literals.
 def ext_predef_outside_function : Warning<

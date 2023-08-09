@@ -1025,13 +1025,6 @@ Parser::ParseExternalDeclaration(ParsedAttributes &Attrs,
     SkipUntil(tok::semi);
     return nullptr;
 
-  case tok::kw_macro: {
-    ConsumeToken();  // Consume the 'macro' token.
-    ParseMacroInvocation();
-    return ParseExternalDeclaration(Attrs, DeclSpecAttrs, DS);
-    // break;
-  }
-
   default:
   dont_know:
     if (Tok.isEditorPlaceholder()) {
@@ -1111,6 +1104,15 @@ bool Parser::isStartOfFunctionDefinition(const ParsingDeclarator &Declarator) {
 Parser::DeclGroupPtrTy Parser::ParseDeclOrFunctionDefInternal(
     ParsedAttributes &Attrs, ParsedAttributes &DeclSpecAttrs,
     ParsingDeclSpec &DS, AccessSpecifier AS) {
+  if (Tok.is(tok::kw_macro) && getLangOpts().CPlusPlus20) {
+    ConsumeToken();  // Consume the 'macro' token.
+    ParseMacroInvocation();
+    return ParseDeclOrFunctionDefInternal(Attrs,
+                                          DeclSpecAttrs,
+                                          DS,
+                                          AS);
+  }
+  
   // Because we assume that the DeclSpec has not yet been initialised, we simply
   // overwrite the source range and attribute the provided leading declspec
   // attributes.

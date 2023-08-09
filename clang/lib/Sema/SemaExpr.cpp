@@ -1641,18 +1641,59 @@ std::optional<std::string> Sema::ActOnMacroInvocation(CallExpr *Call, SourceLoca
 
     // Handle the case where the result is an array of characters
     if (const clang::DeclRefExpr *DRE = clang::dyn_cast<clang::DeclRefExpr>(E)) {
-        if (const clang::VarDecl *VD = clang::dyn_cast<clang::VarDecl>(DRE->getDecl())) {
-            if (VD->getType()->isArrayType()) {
-                if (const clang::StringLiteral *strLiteral = clang::dyn_cast<clang::StringLiteral>(VD->getAnyInitializer())) {
-                    return strLiteral->getString().str();
-                }
-            }
+      if (const clang::VarDecl *VD = clang::dyn_cast<clang::VarDecl>(DRE->getDecl())) {
+        if (VD->getType()->isArrayType()) {
+          if (const clang::StringLiteral *strLiteral = clang::dyn_cast<clang::StringLiteral>(VD->getAnyInitializer())) {
+              return strLiteral->getString().str();
+          }
         }
+      }
+    }
+
+    // Hndle the case where we have a static array of a record returned
+    clang::APValue::LValueBase base = Result.Val.getLValueBase();
+    clang::CharUnits offset = Result.Val.getLValueOffset();
+
+    if (clang::ValueDecl* decl = base.get<clang::ValueDecl*>()) {
+      // If the declaration has a definition and an initializer, evaluate it
+      if (clang::VarDecl* varDecl = llvm::dyn_cast<clang::VarDecl>(decl)) {
+        if (varDecl->hasInit()) {
+          clang::Expr::EvalResult InitResult;
+          if (varDecl->getInit()->EvaluateAsRValue(InitResult, Context)) {
+            if (const clang::RecordDecl *recordDecl = varDecl->getType()->getAs<clang::RecordType>()->getDecl()) {
+              unsigned fieldIndex = 0;
+              clang::CharUnits currentOffset;
+
+              for (auto field : recordDecl->fields()) {
+                if (currentOffset == offset) {
+                  const clang::APValue &fieldValue = InitResult.Val.getStructField(fieldIndex);
+                  if (fieldValue.isArray()) {
+                    std::string ExpansionResult;
+                    unsigned numElements = fieldValue.getArraySize();
+                    ExpansionResult.reserve(numElements);
+                    for (unsigned i = 0; i < numElements; ++i) {
+                      const clang::APValue &element = fieldValue.getArrayInitializedElt(i);
+                      if (element.isInt()) {
+                        char desiredChar = static_cast<char>(element.getInt().getZExtValue());
+                        ExpansionResult.push_back(desiredChar);
+                      }
+                    }
+                    return ExpansionResult;
+                  }
+                  break;
+                }
+                currentOffset += Context.getTypeSizeInChars(field->getType());
+                fieldIndex++;
+              }
+            }
+          }
+        }
+      }
     }
   }
 
   // If the result is not a StringLiteral, return an error
-  Diag(StartOfMacro, diag::err_macro_result_not_string_literal);
+  Diag(StartOfMacro, diag::err_macro_result_not_string_literal_or_array);
 
   // Return the CallExpr node
   return std::nullopt;
