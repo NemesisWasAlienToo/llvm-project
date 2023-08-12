@@ -2010,7 +2010,6 @@ bool Parser::ParseMacroInvocation() {
   llvm::SmallVector<Token, 4> Toks;
 
   // Create a unique_ptr to a MemoryBuffer that contains the string
-  // std::unique_ptr<llvm::MemoryBuffer> Buf = llvm::MemoryBuffer::getMemBufferCopy(*Result, "expansion");
   std::unique_ptr<llvm::MemoryBuffer> Buf = llvm::MemoryBuffer::getMemBufferCopy(*Result);
 
   // Get a StringRef
@@ -2020,7 +2019,8 @@ bool Parser::ParseMacroInvocation() {
   clang::FileManager &FM = PP.getFileManager();
 
   // Create a dummy FileEntry
-  const clang::FileEntry *FE = FM.getVirtualFile("dummy", Buf->getBufferSize(), 0);
+  // @todo Fix the nameing of the virtual file
+  const clang::FileEntry *FE = FM.getVirtualFile("Macro expansion", Buf->getBufferSize(), 0);
 
   // Get the SourceManager from the Preprocessor
   clang::SourceManager &SM = PP.getSourceManager();
@@ -2042,24 +2042,29 @@ bool Parser::ParseMacroInvocation() {
 
   while (true) {
     lexer.LexFromRawLexer(CurTok);
-    // Tok.setLocation(StartLoc);
-    if (CurTok.is(clang::tok::eof)) break;
+    
+    if (CurTok.is(tok::eof)) break;
 
     // If the token is a raw identifier, look it up in the identifier table
-    if (CurTok.is(clang::tok::raw_identifier)) {
+    if (CurTok.is(tok::raw_identifier)) {
       CurTok.setIdentifierInfo(PP.LookUpIdentifierInfo(CurTok));
+    }
+
+    if (CurTok.is(tok::unknown)) {
+      Diag(CurTok, diag::err_macro_result_unknown_token);
+      return true;
     }
 
     if (Tok.is(clang::tok::string_literal)) {
       // Create an ArrayRef that refers to the token
-      llvm::ArrayRef<clang::Token> TokRef(&Tok, /*size=*/1);
+      llvm::ArrayRef<clang::Token> TokRef(&CurTok, /*size=*/1);
 
       // Create a StringLiteralParser
       clang::StringLiteralParser Parser(TokRef, PP);
 
       // Check for errors
       if (Parser.hadError) {
-        // Handle the error...
+        return true;
       }
     }
 
@@ -2078,6 +2083,7 @@ bool Parser::ParseMacroInvocation() {
   // Push the TokenLexer onto the include stack
   PP.EnterTokenStream(ToksRef, /*DisableMacroExpansion=*/false, /*OwnsTokens=*/false);
 
+  // Consume the corrent token which is already moved
   ConsumeAnyToken();
 
   return false;

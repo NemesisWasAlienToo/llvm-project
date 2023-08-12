@@ -708,6 +708,8 @@ def warn_cxx98_compat_nullptr : Warning<
 def ext_c_nullptr : Extension<
   "'nullptr' is a C2x extension">, InGroup<C2x>;
 
+def err_macro_result_unknown_token : Error<"macro result contains unknown token">;
+
 def warn_wrong_clang_attr_namespace : Warning<
   "'__clang__' is a predefined macro name, not an attribute scope specifier; "
   "did you mean '_Clang' instead?">, InGroup<IgnoredAttributes>;

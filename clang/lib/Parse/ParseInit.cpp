@@ -426,32 +426,44 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator(
 }
 
 ExprResult Parser::ToStringLiteral() {
+  assert(Tok.isNot(tok::eof));
+
   bool Invalid = false;
-  llvm::StringRef Spelling = PP.getSpelling(Tok, &Invalid);
+  std::string Stringified = PP.getSpelling(Tok, &Invalid);
+
   if (Invalid) {
     // Handle error
     return ExprError();
   }
 
-  std::string Stringified;
-  for (char C : Spelling) {
-    if (isPrintable(C) && C != '\\' && C != '"') {
-      Stringified.push_back(C);
-    } else {
-      char EscapedChar[5];
-      sprintf(EscapedChar, "\\%03o", C);
-      Stringified.append(EscapedChar);
+  // Replace (\) with (\\)
+  std::size_t pos = 0;
+  while ((pos = Stringified.find('\\', pos)) != std::string::npos) {
+      Stringified.replace(pos, 1, "\\\\");
+      pos += 2; // Move past the inserted backslash and quote
+  }
+
+  if (Tok.is(tok::string_literal)) {
+    // Replace (") with (\")
+    pos = 0;
+    while ((pos = Stringified.find('"', pos)) != std::string::npos) {
+        Stringified.replace(pos, 1, "\\\"");
+        pos += 2; // Move past the inserted backslash and quote
     }
   }
 
   // Add double quotes around the stringified spelling
   Stringified = "\"" + Stringified + "\"";
 
+  char *Buffer = static_cast<char *>(Actions.Context.Allocate(Stringified.size()));
+
+  std::copy_n(Stringified.begin(), Stringified.size(), Buffer);
+
   // Create a new token for the string literal
   Token Result;
   Result.startToken();
   Result.setKind(tok::string_literal);
-  Result.setLiteralData(Stringified.data());
+  Result.setLiteralData(Buffer);
   Result.setLength(Stringified.size());
 
   // Create a vector to hold the string literal token
