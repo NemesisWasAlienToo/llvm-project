@@ -2048,12 +2048,10 @@ bool Parser::ParseMacroInvocation() {
     if (CurTok.is(tok::eof)) break;
 
     // Create an expansion location for this token
-    clang::SourceLocation ExpansionLoc = SM.createExpansionLoc(
-                                            StartLoc,
-                                            CurTok.getLocation(),
-                                            CurTok.getLocation().getLocWithOffset(CurTok.getLength()),
-                                            CurTok.getLength()
-                                        );
+    clang::SourceLocation ExpansionLoc = SM.createExpansionLoc(StartLoc,
+                                                               CurTok.getLocation(),
+                                                               CurTok.getLocation().getLocWithOffset(CurTok.getLength()),
+                                                               CurTok.getLength());
 
     // Set the expansion location for this token
     CurTok.setLocation(ExpansionLoc);
