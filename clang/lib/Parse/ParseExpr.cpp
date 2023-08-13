@@ -1961,6 +1961,7 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   return Res;
 }
 
+/// Creates the call expression for the macro invocation
 ExprResult
 Parser::FinalizeMacro(ExprResult LHS) {
   // @todo Pass the proper location
@@ -1982,6 +1983,8 @@ Parser::FinalizeMacro(ExprResult LHS) {
   return LHS;
 }
 
+/// Parses a macro invocation. It will evaluate the result of the invocation,
+/// and after tokenizing it, will the invocation itself with the resulted tokens.
 bool Parser::ParseMacroInvocation() {
   SourceLocation StartLoc = Tok.getLocation();
 
