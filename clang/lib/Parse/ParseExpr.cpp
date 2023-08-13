@@ -2010,7 +2010,7 @@ bool Parser::ParseMacroInvocation() {
   llvm::SmallVector<Token, 4> Toks;
 
   // Create a unique_ptr to a MemoryBuffer that contains the string
-  std::unique_ptr<llvm::MemoryBuffer> Buf = llvm::MemoryBuffer::getMemBufferCopy(*Result);
+  std::unique_ptr<llvm::MemoryBuffer> Buf = llvm::MemoryBuffer::getMemBufferCopy(std::move(*Result));
 
   // Get a StringRef
   llvm::StringRef strRef = Buf->getBuffer();
@@ -2018,12 +2018,11 @@ bool Parser::ParseMacroInvocation() {
   // Get the FileManager from the Preprocessor
   clang::FileManager &FM = PP.getFileManager();
 
-  // Create a dummy FileEntry
-  // @todo Fix the nameing of the virtual file
-  const clang::FileEntry *FE = FM.getVirtualFile("Macro expansion", Buf->getBufferSize(), 0);
-
   // Get the SourceManager from the Preprocessor
   clang::SourceManager &SM = PP.getSourceManager();
+
+  // Create a dummy FileEntry
+  const clang::FileEntry *FE = FM.getVirtualFile("Macro expansion", Buf->getBufferSize(), 0);
 
   // Create a new FileID for the dummy FileEntry
   clang::FileID FID = SM.createFileID(FE, clang::SourceLocation(), clang::SrcMgr::C_User);
@@ -2045,14 +2044,20 @@ bool Parser::ParseMacroInvocation() {
     
     if (CurTok.is(tok::eof)) break;
 
+    // Create an expansion location for this token
+    clang::SourceLocation ExpansionLoc = SM.createExpansionLoc(
+                                            StartLoc,
+                                            CurTok.getLocation(),
+                                            CurTok.getLocation().getLocWithOffset(CurTok.getLength()),
+                                            CurTok.getLength()
+                                        );
+
+    // Set the expansion location for this token
+    CurTok.setLocation(ExpansionLoc);
+
     // If the token is a raw identifier, look it up in the identifier table
     if (CurTok.is(tok::raw_identifier)) {
       CurTok.setIdentifierInfo(PP.LookUpIdentifierInfo(CurTok));
-    }
-
-    if (CurTok.is(tok::unknown)) {
-      Diag(CurTok, diag::err_macro_result_unknown_token);
-      return true;
     }
 
     if (Tok.is(clang::tok::string_literal)) {
