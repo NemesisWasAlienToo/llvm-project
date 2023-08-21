@@ -1985,9 +1985,7 @@ Parser::FinalizeMacro(ExprResult LHS) {
 
 /// Parses a macro invocation. It will evaluate the result of the invocation,
 /// and after tokenizing it, will the invocation itself with the resulted tokens.
-bool Parser::ParseMacroInvocation() {
-  SourceLocation StartLoc = Tok.getLocation();
-
+bool Parser::ParseMacroInvocation(SourceLocation StartLoc) {
   // Parse the macro's function invocation
   ExprResult MacroInvocation = ParseMacroExpression(AnyCastExpr);
 
@@ -2042,11 +2040,7 @@ bool Parser::ParseMacroInvocation() {
   // Create a token
   clang::Token CurTok;
 
-  while (true) {
-    lexer.LexFromRawLexer(CurTok);
-    
-    if (CurTok.is(tok::eof)) break;
-
+  while (lexer.LexFromRawLexer(CurTok), CurTok.isNot(tok::eof)) {
     // Create an expansion location for this token
     clang::SourceLocation ExpansionLoc = SM.createExpansionLoc(StartLoc,
                                                                CurTok.getLocation(),
@@ -2058,10 +2052,10 @@ bool Parser::ParseMacroInvocation() {
 
     // If the token is a raw identifier, look it up in the identifier table
     if (CurTok.is(tok::raw_identifier)) {
-      CurTok.setIdentifierInfo(PP.LookUpIdentifierInfo(CurTok));
+      PP.LookUpIdentifierInfo(CurTok);
     }
 
-    if (Tok.is(clang::tok::string_literal)) {
+    if (CurTok.is(clang::tok::string_literal)) {
       // Create an ArrayRef that refers to the token
       llvm::ArrayRef<clang::Token> TokRef(&CurTok, /*size=*/1);
 
@@ -2083,11 +2077,14 @@ bool Parser::ParseMacroInvocation() {
   // Create a TokenLexer that provides the tokens
   clang::TokenLexer TL(Toks.data(), Toks.size(), /*DisableExpansion=*/false, /*MacroExpansion=*/false, /*MacroArgCache=*/false, PP);
 
-  // Convert the SmallVector to an ArrayRef
-  llvm::ArrayRef<clang::Token> ToksRef(Toks);
+  // Allocate a buffer for the lexed tokens
+  std::unique_ptr<Token[]> Tokens(new Token[Toks.size()]);
 
-  // Push the TokenLexer onto the include stack
-  PP.EnterTokenStream(ToksRef, /*DisableMacroExpansion=*/false, /*OwnsTokens=*/false);
+  // Copy the contents of the SmallVector into the buffer
+  std::copy(Toks.begin(), Toks.end(), Tokens.get());
+
+  // Push the tokens into the token stream
+  PP.EnterTokenStream(std::move(Tokens), /*NumToks=*/Toks.size(), /*DisableMacroExpansion=*/false, /*IsReinject=*/false);
 
   // Consume the corrent token which is already moved
   ConsumeAnyToken();
