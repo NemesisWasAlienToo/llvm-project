@@ -6255,6 +6255,17 @@ ConstantAddress CodeGenModule::GetAddrOfConstantCString(
                          GV->getValueType(), Alignment);
 }
 
+ConstantAddress CodeGenModule::GetAddrOfUniqueCString(StringRef Str) {
+  CharUnits Alignment =
+      getContext().getAlignOfGlobalVarInChars(getContext().CharTy);
+  llvm::Constant *C =
+      llvm::ConstantDataArray::getString(getLLVMContext(), Str, false);
+  auto GV = GenerateStringLiteral(C, llvm::GlobalValue::PrivateLinkage, *this,
+                                  ".str", Alignment);
+  return ConstantAddress(castStringLiteralToDefaultAddressSpace(*this, GV),
+                         GV->getValueType(), Alignment);
+}
+
 ConstantAddress CodeGenModule::GetAddrOfGlobalTemporary(
     const MaterializeTemporaryExpr *E, const Expr *Init) {
   assert((E->getStorageDuration() == SD_Static ||

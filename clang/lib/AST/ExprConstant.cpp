@@ -43,6 +43,7 @@
 #include "clang/AST/CXXInheritance.h"
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/CurrentSourceLocExprScope.h"
+#include "clang/AST/DeclCXX.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/OSLog.h"
 #include "clang/AST/OptionalDiagnostic.h"
@@ -1987,7 +1988,8 @@ static bool IsNoOpCall(const CallExpr *E) {
   unsigned Builtin = E->getBuiltinCallee();
   return (Builtin == Builtin::BI__builtin___CFStringMakeConstantString ||
           Builtin == Builtin::BI__builtin___NSStringMakeConstantString ||
-          Builtin == Builtin::BI__builtin_function_start);
+          Builtin == Builtin::BI__builtin_function_start ||
+          Builtin == Builtin::BI__builtin_make_static_copy);
 }
 
 static bool IsGlobalLValue(APValue::LValueBase B) {
@@ -9270,6 +9272,37 @@ bool PointerExprEvaluator::VisitBuiltinCallExpr(const CallExpr *E,
     return HandleOperatorNewCall(Info, E, Result);
   case Builtin::BI__builtin_launder:
     return evaluatePointer(E->getArg(0), Result);
+  case Builtin::BI__builtin_make_static_copy: {
+    LValue Src;
+    if (!EvaluatePointer(E->getArg(0), Src, Info))
+      return false;
+    APSInt N;
+    if (!EvaluateInteger(E->getArg(1), N, Info))
+      return false;
+    uint64_t Size = N.getZExtValue();
+
+    QualType CharTy = Info.Ctx.CharTy.withConst();
+    APInt SizeAP(Info.Ctx.getTypeSize(Info.Ctx.getSizeType()), Size);
+    QualType ArrayTy = Info.Ctx.getConstantArrayType(CharTy, SizeAP, nullptr,
+                                                     ArrayType::Normal, 0);
+
+    APValue Val(APValue::UninitArray(), Size, Size);
+    for (uint64_t I = 0; I < Size; ++I) {
+      LValue Elem = Src;
+      if (I && !HandleLValueArrayAdjustment(Info, E, Elem, CharTy, I))
+        return false;
+      APValue Byte;
+      if (!handleLValueToRValueConversion(Info, E, CharTy, Elem, Byte) ||
+          !Byte.isInt())
+        return false;
+      Val.getArrayInitializedElt(I) = Byte;
+    }
+
+    auto *GV = UnnamedGlobalConstantDecl::Create(Info.Ctx, ArrayTy, Val);
+    Result.set(GV);
+    Result.addArray(Info, E, cast<ConstantArrayType>(ArrayTy));
+    return true;
+  }
   case Builtin::BIstrchr:
   case Builtin::BIwcschr:
   case Builtin::BImemchr:
