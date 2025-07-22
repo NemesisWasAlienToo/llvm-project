@@ -862,6 +862,10 @@ def warn_fortify_scanf_overflow : Warning<
 def err_function_start_invalid_type: Error<
   "argument must be a function">;
 
+def err_builtin_make_static_copy_invalid_type
+    : Error<"first argument to __builtin_make_static_copy must be a pointer to "
+            "an integral type">;
+
 /// main()
 // static main() is not an error in C, just in C++.
 def warn_static_main : Warning<"'main' should not be declared static">,

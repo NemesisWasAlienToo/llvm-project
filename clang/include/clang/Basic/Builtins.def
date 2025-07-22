@@ -1653,6 +1653,7 @@ BUILTIN(__builtin_operator_delete, "vv*", "tnE")
 BUILTIN(__builtin_char_memchr, "c*cC*iz", "nE")
 BUILTIN(__builtin_dump_struct, "v.", "t")
 BUILTIN(__builtin_preserve_access_index, "v.", "t")
+BUILTIN(__builtin_make_static_copy, "vC*vC*z", "nE")
 
 // Alignment builtins (uses custom parsing to support pointers and integers)
 BUILTIN(__builtin_is_aligned, "bvC*z", "nctE")

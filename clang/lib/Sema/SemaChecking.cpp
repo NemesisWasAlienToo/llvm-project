@@ -2459,6 +2459,22 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     if (SemaBuiltinPreserveAI(*this, TheCall))
       return ExprError();
     break;
+  case Builtin::BI__builtin_make_static_copy: {
+    if (checkArgCount(*this, TheCall, 2))
+      return ExprError();
+    ExprResult Ptr = DefaultFunctionArrayLvalueConversion(TheCall->getArg(0));
+    if (Ptr.isInvalid())
+      return ExprError();
+    QualType Pointee = Ptr.get()->getType()->getPointeeType();
+    if (Pointee.isNull() || !Pointee->isIntegralType(Context)) {
+      Diag(Ptr.get()->getBeginLoc(),
+           diag::err_builtin_make_static_copy_invalid_type)
+          << Pointee << Ptr.get()->getSourceRange();
+      return ExprError();
+    }
+    TheCall->setArg(0, Ptr.get());
+    break;
+  }
   case Builtin::BI__builtin_call_with_static_chain:
     if (SemaBuiltinCallWithStaticChain(*this, TheCall))
       return ExprError();

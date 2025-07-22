@@ -1045,6 +1045,9 @@ public:
   GetAddrOfConstantCString(const std::string &Str,
                            const char *GlobalName = nullptr);
 
+  /// Create a unique global array containing the provided bytes.
+  ConstantAddress GetAddrOfUniqueCString(StringRef Str);
+
   /// Returns a pointer to a constant global variable for the given file-scope
   /// compound literal expression.
   ConstantAddress GetAddrOfConstantCompoundLiteral(const CompoundLiteralExpr*E);

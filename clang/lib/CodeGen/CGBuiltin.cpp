@@ -2624,6 +2624,8 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
   case Builtin::BI__builtin___CFStringMakeConstantString:
   case Builtin::BI__builtin___NSStringMakeConstantString:
     return RValue::get(ConstantEmitter(*this).emitAbstract(E, E->getType()));
+  case Builtin::BI__builtin_make_static_copy:
+    return RValue::get(ConstantEmitter(*this).emitAbstract(E, E->getType()));
   case Builtin::BI__builtin_stdarg_start:
   case Builtin::BI__builtin_va_start:
   case Builtin::BI__va_start:
